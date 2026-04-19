@@ -1,0 +1,263 @@
+package com.medibook.auth.resource;
+
+import com.medibook.auth.dto.AuthResponse;
+import com.medibook.auth.dto.LoginRequest;
+import com.medibook.auth.dto.RegisterAdminRequest;
+import com.medibook.auth.dto.RegisterRequest;
+import com.medibook.auth.entity.User;
+import com.medibook.auth.security.JwtUtil;
+import com.medibook.auth.service.AuthService;
+
+import jakarta.validation.Valid;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+import java.util.Map;
+
+@RestController
+@RequestMapping("/auth")
+// @CrossOrigin REMOVED — CORS is handled entirely by the API Gateway (application.yml globalcors).
+// Adding @CrossOrigin here causes duplicate Access-Control-Allow-Origin headers → browser rejects.
+public class AuthResource {
+
+    @Autowired
+    private AuthService authService;
+
+    @Autowired
+    private JwtUtil jwtUtil;
+
+    @Value("${app.admin.secret.code}")
+    private String adminSecretCode;
+
+    // PDF: /auth/register
+    @PostMapping("/register")
+    public ResponseEntity<?> register(@Valid @RequestBody RegisterRequest request) {
+        User user = authService.register(request);
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(Map.of(
+                        "message", "Registration successful",
+                        "userId", user.getUserId(),
+                        "role", user.getRole()
+                ));
+    }
+
+    // PDF: /auth/login
+    @PostMapping("/login")
+    public ResponseEntity<?> login(@Valid @RequestBody LoginRequest request) {
+
+        AuthResponse auth = authService.login(request);
+
+        User user = authService.getUserByEmail(request.getEmail());
+        if (!user.getRole().equals("Admin")
+                && (user.getPhone() == null || user.getPhone().trim().isEmpty())
+                && user.getProvider() == null) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of(
+                        "message", "Phone number required",
+                        "requiresPhone", true,
+                        "email", request.getEmail()
+                    ));
+        }
+
+        authService.sendOtp(request.getEmail());
+
+        return ResponseEntity.ok(Map.of(
+                "otpSent", true,
+                "email", request.getEmail(),
+                "message", "OTP sent to your email"
+        ));
+    }
+
+    @PostMapping("/verify-otp")
+    public ResponseEntity<?> verifyOtp(@RequestBody Map<String, String> body) {
+        String email = body.get("email");
+        String otp   = body.get("otp");
+
+        authService.verifyOtp(email, otp);
+
+        User user = authService.getUserByEmail(email);
+        String token = jwtUtil.generateToken(
+                user.getEmail(),
+                user.getRole(),
+                user.getUserId()
+        );
+
+        return ResponseEntity.ok(Map.of(
+                "token",    token,
+                "userId",   user.getUserId(),
+                "role",     user.getRole(),
+                "fullName", user.getFullName(),
+                "message",  "Login successful"
+        ));
+    }
+
+    @PostMapping("/resend-otp")
+    public ResponseEntity<?> resendOtp(@RequestBody Map<String, String> body) {
+        String email = body.get("email");
+        authService.sendOtp(email);
+        return ResponseEntity.ok(Map.of(
+                "otpSent", true,
+                "message", "New OTP sent to your email"
+        ));
+    }
+
+    // PDF: /auth/logout
+    @PostMapping("/logout")
+    public ResponseEntity<?> logout(
+            @RequestHeader("Authorization") String authHeader) {
+        String token = authHeader.substring(7);
+        authService.logout(token);
+        return ResponseEntity.ok(Map.of("message", "Logged out successfully"));
+    }
+
+    // PDF: /auth/refresh
+    @PostMapping("/refresh")
+    public ResponseEntity<?> refresh(
+            @RequestHeader("Authorization") String authHeader) {
+        String token = authHeader.substring(7);
+        String newToken = authService.refreshToken(token);
+        return ResponseEntity.ok(Map.of("token", newToken));
+    }
+
+    // PDF: /auth/profile GET
+    @GetMapping("/profile/{userId}")
+    public ResponseEntity<User> getProfile(@PathVariable int userId) {
+        return ResponseEntity.ok(authService.getUserById(userId));
+    }
+
+    // PDF: /auth/profile PUT
+    @PutMapping("/profile/{userId}")
+    public ResponseEntity<User> updateProfile(
+            @PathVariable int userId,
+            @RequestBody User updatedUser) {
+        return ResponseEntity.ok(authService.updateProfile(userId, updatedUser));
+    }
+
+    // PDF: /auth/password
+    @PutMapping("/password/{userId}")
+    public ResponseEntity<?> changePassword(
+            @PathVariable int userId,
+            @RequestBody Map<String, String> body) {
+        authService.changePassword(userId, body.get("newPassword"));
+        return ResponseEntity.ok(Map.of("message", "Password updated successfully"));
+    }
+
+    // PDF: /auth/deactivate
+    @PutMapping("/deactivate/{userId}")
+    public ResponseEntity<?> deactivate(@PathVariable int userId) {
+        authService.deactivateAccount(userId);
+        return ResponseEntity.ok(Map.of("message", "Account deactivated successfully"));
+    }
+
+    @PostMapping("/admin/register")
+    public ResponseEntity<?> registerAdmin(@Valid @RequestBody RegisterAdminRequest request) {
+        try {
+            User admin = authService.registerAdmin(request, adminSecretCode);
+            return ResponseEntity.status(HttpStatus.CREATED)
+                    .body(Map.of(
+                            "message", "Admin account created successfully",
+                            "userId", admin.getUserId(),
+                            "email", admin.getEmail()
+                    ));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("message", e.getMessage()));
+        }
+    }
+
+    @PostMapping("/google/complete")
+    public ResponseEntity<?> completeGoogleLogin(@RequestBody Map<String, String> body) {
+        String email    = body.get("email");
+        String fullName = body.get("fullName");
+        String picture  = body.get("picture");
+        String provider = body.get("provider");
+        String role     = body.get("role");
+
+        User user = authService.findOrCreateGoogleUser(email, fullName, picture, provider, role);
+
+        String token = jwtUtil.generateToken(
+                user.getEmail(),
+                user.getRole(),
+                user.getUserId()
+        );
+
+        return ResponseEntity.ok(Map.of(
+                "token",    token,
+                "userId",   user.getUserId(),
+                "role",     user.getRole(),
+                "fullName", user.getFullName()
+        ));
+    }
+
+    @PostMapping("/add-phone")
+    public ResponseEntity<?> addPhone(@RequestBody Map<String, String> body) {
+        String email = body.get("email");
+        String phone  = body.get("phone");
+
+        if (phone == null || phone.trim().isEmpty()) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("message", "Phone number is required."));
+        }
+
+        User user = authService.getUserByEmail(email);
+        user.setPhone(phone);
+        authService.updateProfile(user.getUserId(), user);
+        authService.sendOtp(email);
+
+        return ResponseEntity.ok(Map.of(
+                "otpSent", true,
+                "message", "Phone saved and OTP sent to your email"
+        ));
+    }
+
+    @PostMapping("/forgot-password")
+    public ResponseEntity<?> forgotPassword(@RequestBody Map<String, String> body) {
+        String email = body.get("email");
+
+        if (email == null || email.trim().isEmpty()) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("message", "Email is required."));
+        }
+
+        try {
+            authService.forgotPassword(email.trim());
+            return ResponseEntity.ok(Map.of(
+                    "sent", true,
+                    "message", "Reset link sent to your email"
+            ));
+        } catch (Exception e) {
+            return ResponseEntity.ok(Map.of(
+                    "sent", true,
+                    "message", "If this email is registered, a reset link has been sent"
+            ));
+        }
+    }
+
+    @PostMapping("/verify-reset-otp")
+    public ResponseEntity<?> verifyResetOtp(@RequestBody Map<String, String> body) {
+        String token = body.get("token");
+        String otp   = body.get("otp");
+
+        authService.verifyResetOtp(token, otp);
+
+        return ResponseEntity.ok(Map.of(
+                "verified", true,
+                "message", "OTP verified. You can now reset your password."
+        ));
+    }
+
+    @PostMapping("/reset-password")
+    public ResponseEntity<?> resetPassword(@RequestBody Map<String, String> body) {
+        String token       = body.get("token");
+        String newPassword = body.get("newPassword");
+
+        authService.resetPassword(token, newPassword);
+
+        return ResponseEntity.ok(Map.of(
+                "success", true,
+                "message", "Password reset successful. Please login with your new password."
+        ));
+    }
+}
