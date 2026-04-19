@@ -23,7 +23,7 @@ spring:
               - OPTIONS
               - PATCH
             allowedHeaders: "*"
-            allowCredentials: true
+            allowCredentials: false
             maxAge: 3600
             exposedHeaders:
               - Authorization
