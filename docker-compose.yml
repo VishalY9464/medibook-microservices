@@ -1,0 +1,209 @@
+version: '3.8'
+
+services:
+
+  # ── MySQL Database ──────────────────────────────
+  mysql:
+    image: mysql:8.0
+    container_name: medibook-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: Vishal@2004
+      MYSQL_DATABASE: medibook_auth_db
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      timeout: 20s
+      retries: 10
+
+  # ── RabbitMQ ────────────────────────────────────
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: medibook-rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      timeout: 20s
+      retries: 10
+
+  # ── Eureka Server ───────────────────────────────
+  eureka-server:
+    build: ./eureka-server
+    container_name: eureka-server
+    ports:
+      - "8761:8761"
+    environment:
+      - SPRING_APPLICATION_NAME=eureka-server
+    depends_on:
+      - mysql
+
+  # ── Auth Service ────────────────────────────────
+  auth-service:
+    build: ./auth-service
+    container_name: auth-service
+    ports:
+      - "8081:8081"
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:mysql://mysql:3306/medibook_auth_db?createDatabaseIfNotExist=true
+      - SPRING_DATASOURCE_USERNAME=root
+      - SPRING_DATASOURCE_PASSWORD=Vishal@2004
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka-server:8761/eureka/
+      - SPRING_RABBITMQ_HOST=rabbitmq
+      - SPRING_RABBITMQ_PORT=5672
+      - JWT_SECRET=medibook_super_secret_key_2026_very_long_string_min_256_bits
+    depends_on:
+      - mysql
+      - eureka-server
+      - rabbitmq
+
+  # ── Provider Service ────────────────────────────
+  provider-service:
+    build: ./provider-service
+    container_name: provider-service
+    ports:
+      - "8082:8082"
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:mysql://mysql:3306/medibook_provider_db?createDatabaseIfNotExist=true
+      - SPRING_DATASOURCE_USERNAME=root
+      - SPRING_DATASOURCE_PASSWORD=Vishal@2004
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka-server:8761/eureka/
+      - JWT_SECRET=medibook_super_secret_key_2026_very_long_string_min_256_bits
+    depends_on:
+      - mysql
+      - eureka-server
+
+  # ── Slot Service ────────────────────────────────
+  slot-service:
+    build: ./slot-service
+    container_name: slot-service
+    ports:
+      - "8083:8083"
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:mysql://mysql:3306/medibook_slot_db?createDatabaseIfNotExist=true
+      - SPRING_DATASOURCE_USERNAME=root
+      - SPRING_DATASOURCE_PASSWORD=Vishal@2004
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka-server:8761/eureka/
+      - JWT_SECRET=medibook_super_secret_key_2026_very_long_string_min_256_bits
+    depends_on:
+      - mysql
+      - eureka-server
+
+  # ── Appointment Service ─────────────────────────
+  appointment-service:
+    build: ./appointment-service
+    container_name: appointment-service
+    ports:
+      - "8084:8084"
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:mysql://mysql:3306/medibook_appointment_db?createDatabaseIfNotExist=true
+      - SPRING_DATASOURCE_USERNAME=root
+      - SPRING_DATASOURCE_PASSWORD=Vishal@2004
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka-server:8761/eureka/
+      - SPRING_RABBITMQ_HOST=rabbitmq
+      - SPRING_RABBITMQ_PORT=5672
+      - JWT_SECRET=medibook_super_secret_key_2026_very_long_string_min_256_bits
+    depends_on:
+      - mysql
+      - eureka-server
+      - rabbitmq
+
+  # ── Payment Service ─────────────────────────────
+  payment-service:
+    build: ./payment-service
+    container_name: payment-service
+    ports:
+      - "8085:8085"
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:mysql://mysql:3306/medibook_payment_db?createDatabaseIfNotExist=true
+      - SPRING_DATASOURCE_USERNAME=root
+      - SPRING_DATASOURCE_PASSWORD=Vishal@2004
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka-server:8761/eureka/
+      - JWT_SECRET=medibook_super_secret_key_2026_very_long_string_min_256_bits
+    depends_on:
+      - mysql
+      - eureka-server
+
+  # ── Notification Service ────────────────────────
+  notification-service:
+    build: ./notification-service
+    container_name: notification-service
+    ports:
+      - "8086:8086"
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:mysql://mysql:3306/medibook_notification_db?createDatabaseIfNotExist=true
+      - SPRING_DATASOURCE_USERNAME=root
+      - SPRING_DATASOURCE_PASSWORD=Vishal@2004
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka-server:8761/eureka/
+      - SPRING_RABBITMQ_HOST=rabbitmq
+      - SPRING_RABBITMQ_PORT=5672
+      - SPRING_MAIL_HOST=smtp.gmail.com
+      - SPRING_MAIL_PORT=587
+      - SPRING_MAIL_USERNAME=yadavvishal9464@gmail.com
+      - SPRING_MAIL_PASSWORD=kifsugzxkqgrjmne
+      - JWT_SECRET=medibook_super_secret_key_2026_very_long_string_min_256_bits
+    depends_on:
+      - mysql
+      - eureka-server
+      - rabbitmq
+
+  # ── Review Service ──────────────────────────────
+  review-service:
+    build: ./review-service
+    container_name: review-service
+    ports:
+      - "8087:8087"
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:mysql://mysql:3306/medibook_review_db?createDatabaseIfNotExist=true
+      - SPRING_DATASOURCE_USERNAME=root
+      - SPRING_DATASOURCE_PASSWORD=Vishal@2004
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka-server:8761/eureka/
+      - JWT_SECRET=medibook_super_secret_key_2026_very_long_string_min_256_bits
+    depends_on:
+      - mysql
+      - eureka-server
+
+  # ── Record Service ──────────────────────────────
+  record-service:
+    build: ./record-service
+    container_name: record-service
+    ports:
+      - "8088:8088"
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:mysql://mysql:3306/medibook_record_db?createDatabaseIfNotExist=true
+      - SPRING_DATASOURCE_USERNAME=root
+      - SPRING_DATASOURCE_PASSWORD=Vishal@2004
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka-server:8761/eureka/
+      - JWT_SECRET=medibook_super_secret_key_2026_very_long_string_min_256_bits
+    depends_on:
+      - mysql
+      - eureka-server
+
+  # ── API Gateway ─────────────────────────────────
+  api-gateway:
+    build: ./api-gateway
+    container_name: api-gateway
+    ports:
+      - "8080:8080"
+    environment:
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka-server:8761/eureka/
+      - JWT_SECRET=medibook_super_secret_key_2026_very_long_string_min_256_bits
+    depends_on:
+      - eureka-server
+      - auth-service
+      - provider-service
+      - slot-service
+      - appointment-service
+      - payment-service
+      - notification-service
+      - review-service
+      - record-service
+
+volumes:
+  mysql_data:
